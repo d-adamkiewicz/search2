@@ -1,10 +1,19 @@
 #!/usr/bin/python
 '''
-v.09, status: alpha - USE IT AT YOUR OWN RISK!!! 
+v.12, status: alpha - USE IT AT YOUR OWN RISK!!! 
 IT COULD POTENTIALLY CAUSE DAMAGE OR DATA LOSS
+changes:
+- now it uses modified version of fnmatch.translate function instead of fnmatch module
+this allows file multi-patterns i.e. patterns separated by semicolon e.g.
+*.zip;*.py
+v.11
+changes:
+- now when in scan mode it creates 'dirinfo.txt' file 
+which contains directory paths and summarized size of all files (of given pattern) 
+in each of them
 '''
 
-import os, sys, getopt, fnmatch, shutil
+import os, sys, getopt, shutil, re
 
 def usage():
 	print(
@@ -12,6 +21,8 @@ def usage():
 	" search2 --move --search-dir=c:\\tym --dest-dir=f:\\tymczas --pattern=*.odt",
 	"or",
 	" search2.py -p*.odt -sc:\\tym -de:\\tu -c",
+	"multi-pattern case:",
+	" search2.py -p*.odt;*.ods -sc:\\tym -de:\\tu -c",
 	"options:",
 	" -s [or --search-dir=]",
 	" -d [or --dest-folder=]",
@@ -19,9 +30,15 @@ def usage():
 	" -c [or --copy] OR -m [or --move] OR -n [or --scan or none of]",
 	" -o [or --output=] OR if not specified output file is 'output.txt'",
 	"notes:",
-	" output file contains list of full pathnames that matches the pattern",
-	" 'error.log' file contains list of non-critical errors that occured during scan",
-	" when -d script creates output file (and 'error.log') in specified directory",
+	" - output file (by default 'output.txt') contains list of full pathnames", 
+	" that match the pattern",
+	" - 'error.log' file contains list of non-critical errors that occured", 
+	" during scan",
+	" - when '-d' script creates output file (and 'error.log' and/or 'dirinfo.txt')",
+	" in specified directory",
+	" - when in scan mode ie '-n' [or '--scan' or none] it produces 'dirinfo.txt'",
+	" which contains directory paths and summarized size of all files",
+	" (of given pattern) in each of them",
 	sep="\n")
 	
 def failsafe_makedirs(dir):
@@ -31,6 +48,49 @@ def failsafe_makedirs(dir):
 		return False
 	else: 
 		return True
+		
+'''
+origin: fnmatch module
+'''
+def translate(pat):
+	"""Translate a shell PATTERN to a regular expression.
+
+	There is no way to quote meta-characters.
+	"""
+
+	i, n = 0, len(pat)
+	res = ''
+	while i < n:
+		c = pat[i]
+		i = i+1
+		if c == '*':
+			res = res + '.*'
+		elif c == '?':
+			res = res + '.'
+		elif c == '[':
+			j = i
+			if j < n and pat[j] == '!':
+				j = j+1
+			if j < n and pat[j] == ']':
+				j = j+1
+			while j < n and pat[j] != ']':
+				j = j+1
+			if j >= n:
+				res = res + '\\['
+			else:
+				stuff = pat[i:j].replace('\\','\\\\')
+				i = j+1
+				if stuff[0] == '!':
+					stuff = '^' + stuff[1:]
+				elif stuff[0] == '^':
+					stuff = '\\' + stuff
+				res = '%s[%s]' % (res, stuff)
+		# added
+		elif c == ';':
+			res = res + '\Z|'
+		else:
+			res = res + re.escape(c)
+	return res + '\Z(?ms)'
 
 def main():
 	search_dir = ''
@@ -105,6 +165,10 @@ def main():
 	'''
 	output = output or default_output
 	errlog = 'error.log'
+	dirinfo = ''
+	if work == 'scan':
+		dirinfo = 'dirinfo.txt'
+		
 	'''
 	when -d	then output file
 	is located inside --dest_dir
@@ -112,6 +176,8 @@ def main():
 	if dest_dir != '':
 			output = dest_dir + '/' + output
 			errlog = dest_dir + '/' + errlog
+			if dirinfo:
+				dirinfo = dest_dir + '/' + dirinfo
 			
 	try:
 		out = open(output, 'a+')
@@ -125,32 +191,57 @@ def main():
 		print(err)
 		sys.exit(2)
 		
+	if dirinfo:
+		try: 
+			idir = open(dirinfo, 'a+')
+		except IOError as err:
+			print(err)
+			sys.exit(2)
+		
 	fullpath = ''
+	stores = {}
+	pattern = translate(pattern)
+	print(pattern)
+	regex = re.compile(pattern)
 	for root, dirs, files in os.walk(search_dir):
-		for file in fnmatch.filter(files, pattern):
-			fullpath = os.path.join(root, file)
-			if work in ('scan', 'copy', 'move'):
-				try: 
-					print(fullpath, os.path.getsize(fullpath), sep=';', file=out)
-				except: 
-					print(ascii(fullpath), os.path.getsize(fullpath), sep=';', file=log)
-			
-			if work in ('copy', 'move'):
-				extpath = os.path.splitdrive(fullpath)[1]
-				head = os.path.split(extpath)[0]
-				if not os.path.isdir(dest_dir + '/' + head):
-					if not failsafe_makedirs(dest_dir + '/' + head):
-						sys.exit("2: error creating dir: " + dest_dir + '/' + head)
-				if work == 'copy':
-					try:
-						shutil.copy(fullpath, dest_dir + '/' + extpath)
-					except WindowsError:
-						print(fullpath, "- can't copy file!!!", sep=';', file=log)
-				elif work == 'move':
+		for file in files:
+			if regex.match(file):
+				fullpath = os.path.join(root, file)
+				size = os.path.getsize(fullpath)
+				if work in ('scan', 'copy', 'move'):
 					try: 
-						shutil.move(fullpath, dest_dir + '/' + extpath)
-					except WindowsError:
-						print(fullpath, "- can't move file!!!", sep=';', file=log)
+						print(fullpath, size, sep=';', file=out)
+					except: 
+						print(ascii(fullpath), size, sep=';', file=log)
+				
+				if work in ('copy', 'move'):
+					extpath = os.path.splitdrive(fullpath)[1]
+					head = os.path.split(extpath)[0]
+					if not os.path.isdir(dest_dir + '/' + head):
+						if not failsafe_makedirs(dest_dir + '/' + head):
+							sys.exit("2: error creating dir: " + dest_dir + '/' + head)
+					if work == 'copy':
+						try:
+							shutil.copy(fullpath, dest_dir + '/' + extpath)
+						except WindowsError:
+							print(fullpath, "- can't copy file!!!", sep=';', file=log)
+					elif work == 'move':
+						try: 
+							shutil.move(fullpath, dest_dir + '/' + extpath)
+						except WindowsError:
+							print(fullpath, "- can't move file!!!", sep=';', file=log)
+				
+				if work == 'scan':
+					try:
+						stores[root] += size
+					except KeyError:
+						stores[root] = size
+				
+	if work == 'scan':
+		for k in stores.keys():
+			print(k, stores[k], sep=';', file=idir)
+		
+			
 	
 if __name__ == "__main__":
 	main()

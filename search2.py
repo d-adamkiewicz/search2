@@ -1,7 +1,11 @@
 #!/usr/bin/python
 '''
-v.12, status: alpha - USE IT AT YOUR OWN RISK!!! 
+v.13, status: alpha - USE IT AT YOUR OWN RISK!!! 
 IT COULD POTENTIALLY CAUSE DAMAGE OR DATA LOSS
+changes:
+- '-a' | '--append' option added
+- fixing "<driveletter>:"  bug
+v.12
 changes:
 - now it uses modified version of fnmatch.translate function instead of fnmatch module
 this allows file multi-patterns i.e. patterns separated by semicolon e.g.
@@ -29,7 +33,9 @@ def usage():
 	" -p [or --pattern=]",
 	" -c [or --copy] OR -m [or --move] OR -n [or --scan or none of]",
 	" -o [or --output=] OR if not specified output file is 'output.txt'",
+	" -a [or --append]",
 	"notes:",
+	" when specify whole disk drive use -s\"c:\" not -s\"c:\\\"",
 	" - output file (by default 'output.txt') contains list of full pathnames", 
 	" that match the pattern",
 	" - 'error.log' file contains list of non-critical errors that occured", 
@@ -39,6 +45,8 @@ def usage():
 	" - when in scan mode ie '-n' [or '--scan' or none] it produces 'dirinfo.txt'",
 	" which contains directory paths and summarized size of all files",
 	" (of given pattern) in each of them",
+	" '--append' option makes data to be appended at the end of existing file(s)",
+	" not creating new ones",
 	sep="\n")
 	
 def failsafe_makedirs(dir):
@@ -102,8 +110,9 @@ def main():
 	default_output = 'output.txt'
 	output = ''
 	work = False
+	append = False
 	try:
-		opts, args = getopt.getopt(sys.argv[1:], "s:d:p:cmno:h", ["search-dir=","dest-dir=","pattern=","copy","move","scan","output=","help"])
+		opts, args = getopt.getopt(sys.argv[1:], "s:d:p:cmno:ha", ["search-dir=","dest-dir=","pattern=","copy","move","scan","output=","help","append"])
 	except getopt.GetoptError as err:
 		print(err)
 		usage()
@@ -114,6 +123,8 @@ def main():
 			usage()
 			sys.exit()
 		elif o in ("-s", "--search-dir"):
+			if a[-1] == ':':
+				a = a + '\\'
 			search_dir = a
 			print(o, a)
 		elif o in ("-d", "--dest-dir"):
@@ -133,6 +144,9 @@ def main():
 			print(o, a)
 		elif o in ("-o", "--output"):
 			output = a
+			print(o, a)
+		elif o in ("-a", "--append"):
+			append = True
 			print(o, a)
 	if not move and not copy:
 		scan = True
@@ -180,20 +194,20 @@ def main():
 				dirinfo = dest_dir + '/' + dirinfo
 			
 	try:
-		out = open(output, 'a+')
+		out = open(output, 'a' if append else 'w')
 	except IOError as err:
 		print(err)
 		sys.exit(2)
 		
 	try:
-		log = open(errlog, 'a+')
+		log = open(errlog, 'a' if append else 'w')
 	except IOError as err:
 		print(err)
 		sys.exit(2)
 		
 	if dirinfo:
 		try: 
-			idir = open(dirinfo, 'a+')
+			idir = open(dirinfo, 'a' if append else 'w')
 		except IOError as err:
 			print(err)
 			sys.exit(2)

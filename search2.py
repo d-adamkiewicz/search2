@@ -1,5 +1,8 @@
 #!/usr/bin/python
 '''
+v.14 As docs says about '(?aiLmsux)' switch
+"Changed in version 3.11: This construction can only be used at the start of the expression"
+so it's changed to work with 3.11
 v.13, status: alpha - USE IT AT YOUR OWN RISK!!! 
 IT COULD POTENTIALLY CAUSE DAMAGE OR DATA LOSS
 changes:
@@ -98,7 +101,7 @@ def translate(pat):
 			res = res + '\Z|'
 		else:
 			res = res + re.escape(c)
-	return res + '\Z(?ms)'
+	return '(?si)' + res + '\Z'
 
 def main():
 	search_dir = ''
@@ -221,7 +224,11 @@ def main():
 		for file in files:
 			if regex.match(file):
 				fullpath = os.path.join(root, file)
-				size = os.path.getsize(fullpath)
+				try:
+					size = os.path.getsize(fullpath)
+				except OSError as e:
+					print(f"Unable to open {fullpath}: {e}", file=log)
+    
 				if work in ('scan', 'copy', 'move'):
 					try: 
 						print(fullpath, size, sep=';', file=out)
